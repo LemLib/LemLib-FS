@@ -447,4 +447,5 @@ int main() {
     // Initialize the file system
     initVFS();
     std::cout << "[INIT] Initialized" << std::endl;
+    initializeSerialListener();
 }
