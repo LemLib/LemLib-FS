@@ -6,17 +6,17 @@
 /*    Description:  LemLib file system serial interpreter                     */
 /*                                                                            */
 /*----------------------------------------------------------------------------*/
-#include "vex.h"
 #include <iostream>
 #include <fstream>
 #include <vector>
 #include <sstream>
+#include <string.h>
 
 // Exception codes:
-// [E1] Micro SD card not inserted
-// [E2] Could not open index file
-// [E3] Could not open file
-// [E4] Path must start with a slash
+// VFS_INIT_FAILED
+// FILE_NOT_FOUND
+// FILE_ALREADY_EXISTS
+// CANNOT_OPEN_FILE
 
 /**
  * @brief Convert a value to a string
@@ -31,19 +31,17 @@ template <typename T> std::string to_string(T value) {
     return os.str();
 }
 
-/**
- * @brief Initialize the file system
- *
- */
-void initVFS() {
-    // Check if the micro sd card is inserted
-    vex::brain Brain;
-    if (!Brain.SDcard.isInserted()) throw "[E1] Micro SD card not inserted";
-    // Check if the index file exists
-    std::ifstream indexFile;
-    indexFile.open("index.txt");
-    if (!indexFile.is_open()) throw "[E2] Could not open index file";
-}
+typedef struct VFS_INIT_FAILED {};
+VFS_INIT_FAILED vfsInitFailed;
+
+typedef struct FILE_NOT_FOUND {};
+FILE_NOT_FOUND fileNotFound;
+
+typedef struct FILE_ALREADY_EXISTS {};
+FILE_ALREADY_EXISTS fileAlreadyExists;
+
+typedef struct CANNOT_OPEN_FILE {};
+CANNOT_OPEN_FILE cannotOpenFile;
 
 /**
  * @brief Structure for an entry in the index file
@@ -57,20 +55,36 @@ typedef struct lemlibFile {
 } lemlibFile;
 
 /**
+ * @brief Initialize the file system
+ *
+ */
+void initVFS() {
+    // Check if the index file exists
+    std::ifstream indexFile;
+    indexFile.open("index.txt");
+    // If the index file does not exist, create it
+    if (!indexFile.is_open()) {
+        std::ofstream indexFile;
+        indexFile.open("index.txt");
+        // throw an exception if the index file could not be created
+        if (!indexFile.is_open()) throw vfsInitFailed;
+        indexFile.close();
+    }
+}
+
+/**
  * @brief Read the index file
  *
  * @return std::vector<lemlibFile> contents of the index file
  */
 std::vector<lemlibFile> readFileIndex() {
-    // throw an exception if the micro sd card is not inserted
-    if (!vex::brain().SDcard.isInserted()) throw "[E1] Micro SD card not inserted";
     // Initialize the vector
     std::vector<lemlibFile> index;
     // Open the index file
     std::ifstream indexFile;
     indexFile.open("index.txt");
     // throw an exception if the index file could not be opened
-    if (!indexFile.is_open()) throw "[E2] Could not open index file";
+    if (!indexFile.is_open()) throw cannotOpenFile;
     // iterate through the index file
     for (std::string line; std::getline(indexFile, line);) {
         // split the line into the name and the sector
@@ -90,8 +104,6 @@ std::vector<lemlibFile> readFileIndex() {
  * @return const char* the sector the file is stored in, or null if the file is not found
  */
 const char* getFileSector(const char* path) {
-    // throw an exception if the path does not start with a slash
-    if (path[0] != '/') throw "[E4] Path must start with a slash";
     // Read the index file
     std::vector<lemlibFile> index = readFileIndex();
     // Iterate through the index
@@ -100,8 +112,6 @@ const char* getFileSector(const char* path) {
         if (file.name == path) return file.sector.c_str();
     }
     // Return null if the file is not found
-    // also output an error for the LemLib extension
-    std::cout << "[ERROR] File " << path << " not found" << std::endl;
     return NULL;
 }
 
@@ -112,8 +122,6 @@ const char* getFileSector(const char* path) {
  * @return std::vector <std::string> a vector of all the files and folders in the directory
  */
 std::vector<std::string> listDirectory(const char* dir, bool recursive = false) {
-    // throw an exception if the path does not start with a slash
-    if (dir[0] != '/') throw "[E4] Path must start with a slash";
     // Initialize the vector
     std::vector<std::string> files;
     // Read the index file
@@ -147,8 +155,6 @@ std::vector<std::string> listDirectory(const char* dir, bool recursive = false) 
  * @return false the file does not exist
  */
 bool fileExists(const char* path) {
-    // throw an exception if the path does not start with a slash
-    if (path[0] != '/') throw "[E4] Path must start with a slash";
     // Read the index file
     std::vector<lemlibFile> index = readFileIndex();
     // Iterate through the index
@@ -165,13 +171,8 @@ bool fileExists(const char* path) {
  * @param path the path of the virtual file
  */
 void deleteFile(const char* path) {
-    // throw an exception if the path does not start with a slash
-    if (path[0] != '/') throw "[E4] Path must start with a slash";
     // check if the file exists
-    if (!fileExists(path)) {
-        throw "[E5] File does not exist";
-        return;
-    }
+    if (!fileExists(path)) throw fileNotFound;
     // empty the sector the file is stored in
     std::ofstream sector;
     sector.open(getFileSector(path));
@@ -181,7 +182,7 @@ void deleteFile(const char* path) {
     std::vector<lemlibFile> index = readFileIndex();
     std::ofstream indexFile;
     indexFile.open("index.txt");
-    if (!indexFile.is_open()) throw "[E2] Could not open index file";
+    if (!indexFile.is_open()) throw cannotOpenFile;
     for (const lemlibFile& line : index) {
         if (line.name != path) indexFile << line.name << "/" << line.sector << std::endl;
     }
@@ -195,18 +196,16 @@ void deleteFile(const char* path) {
  * @return const char* the sector the file is stored in
  */
 const char* createFile(const char* path, bool overwrite = true) {
-    // throw an exception if the path does not start with a slash
-    if (path[0] != '/') throw "[E4] Path must start with a slash";
     // Create the file in the index file
     std::ofstream indexFile;
     indexFile.open("index.txt", std::ios_base::app);
-    if (!indexFile.is_open()) throw "[E2] Could not open index file";
+    if (!indexFile.is_open()) throw cannotOpenFile;
     // Check if the file already exists
     if (fileExists(path)) {
         // If the file should be overwritten, delete the file
         if (overwrite) deleteFile(path);
         // Otherwise, throw an exception
-        else throw "[E3] File " + std::string(path) + " already exists";
+        else throw fileAlreadyExists;
     }
     // Find the first empty sector
     std::vector<lemlibFile> index = readFileIndex();
@@ -217,6 +216,13 @@ const char* createFile(const char* path, bool overwrite = true) {
     // Create the file
     indexFile << path << "/" << sector << std::endl;
     indexFile.close();
+    // create the sector file
+    std::ofstream sectorFile;
+    // check if the sector file was created
+    if (!sectorFile.is_open()) throw cannotOpenFile;
+    sectorFile.open(to_string(sector));
+    sectorFile << "";
+    sectorFile.close();
     return to_string(sector).c_str();
 }
 
@@ -229,4 +235,7 @@ int main() {
     // Initialize the file system
     initVFS();
     std::cout << "[INIT] Initialized" << std::endl;
+
+    // Create a file
+    std::cout << "[INFO] Creating file /test.txt" << std::endl;
 }
