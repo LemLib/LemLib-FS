@@ -234,14 +234,12 @@ const char* createFile(const char* path, bool overwrite = true) {
  * @return std::string the sector the file is stored in
  */
 std::string write(const char* path, const char* data) {
-    if (path[0] != '/') throw "[E4] Path must start with a slash";
-
     // Create the file if it does not exist
     if (!fileExists(path)) createFile(path);
 
     std::ofstream file;
     file.open(getFileSector(path));
-    if (!file.is_open()) throw "[E2] Could not open file";
+    if (!file.is_open()) throw cannotOpenFile;
     std::string line;
     std::istringstream stream(data);
     while (std::getline(stream, line, '\n')) file << line << std::endl;
@@ -258,15 +256,13 @@ std::string write(const char* path, const char* data) {
  * @return std::string the data in the file, separated by \n
  */
 std::string read(const char* path) {
-    if (path[0] != '/') throw "[E4] Path must start with a slash";
-
     // Check if it exists
-    if (!fileExists(path)) throw "[E5] File does not exist";
+    if (!fileExists(path)) throw fileNotFound;
 
     // Find the file
     std::ifstream file;
     file.open(getFileSector(path));
-    if (!file.is_open()) throw "[E2] Could not open file";
+    if (!file.is_open()) throw cannotOpenFile;
     // Read the contents, line by line
     std::string data = "";
     std::string line;
