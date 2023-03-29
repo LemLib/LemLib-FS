@@ -389,7 +389,7 @@ void initializeSerialListener() {
 
     // use std::cin to read the input
     while (true) {
-        std::cout << "LemLib > ";
+        std::cout << "LemLib > " << std::endl;
         std::getline(std::cin, input);
         std::cout << std::endl;
 
